@@ -1,0 +1,4 @@
+flask
+pika
+requests
+python-dotenv
