@@ -2,9 +2,17 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+# Build argument to control InsightFace installation
+ARG INSTALL_INSIGHTFACE=false
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -13,11 +21,22 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install InsightFace and dependencies if enabled
+RUN if [ "$INSTALL_INSIGHTFACE" = "true" ]; then \
+        pip install --no-cache-dir insightface onnxruntime; \
+    fi
+
 # Copy application files
 COPY app.py .
 COPY config.py .
 COPY rabbitmq.py .
 COPY worker.py .
+
+# Copy and run model download script if InsightFace is enabled
+COPY download_models.py .
+RUN if [ "$INSTALL_INSIGHTFACE" = "true" ]; then \
+        python download_models.py; \
+    fi
 
 # Expose Flask port
 EXPOSE 5000
