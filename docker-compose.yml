@@ -1,23 +1,23 @@
 services:
   # RabbitMQ Service
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: hikvision-rabbitmq
-    ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - hikvision-network
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
+  # rabbitmq:
+  #   image: rabbitmq:3-management
+  #   container_name: hikvision-rabbitmq
+  #   ports:
+  #     - "5672:5672"    # AMQP port
+  #     - "15672:15672"  # Management UI
+  #   environment:
+  #     RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+  #     RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+  #   healthcheck:
+  #     test: ["CMD", "rabbitmq-diagnostics", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - hikvision-network
+  #   volumes:
+  #     - rabbitmq-data:/var/lib/rabbitmq
 
   # Flask App (OPTIONAL - Only needed if NOT using Laravel integration)
   # Comment out this service if you're using Laravel to publish messages
@@ -47,10 +47,13 @@ services:
       dockerfile: Dockerfile.worker
     container_name: hikvision-worker-pubsub
     environment:
-      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_HOST=mq.petrokimia-gresik.com
       - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-guest}
+      - RABBITMQ_USER=user
+      - RABBITMQ_PASSWORD=password
+      - HIKVISION_BASE_URL=https://10.14.41.217:5001
+      - HIKVISION_AK=44499395
+      - HIKVISION_SIGNATURE=lhY4jtPZfM+oVZJPRvUxHhD8ZGZjqHBjp9qtraFhfjg=
     depends_on:
       rabbitmq:
         condition: service_healthy
