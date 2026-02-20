@@ -2,7 +2,6 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
@@ -18,6 +17,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY worker_pubsub.py .
 COPY worker.py .
 COPY config.py .
+
+# Set environment variables for external RabbitMQ
+ENV RABBITMQ_HOST=mq.petrokimia-gresik.com
+ENV RABBITMQ_PORT=5672
+ENV RABBITMQ_USER=user
+ENV RABBITMQ_PASSWORD=password
 
 # Run worker pub/sub
 CMD ["python", "worker_pubsub.py"]

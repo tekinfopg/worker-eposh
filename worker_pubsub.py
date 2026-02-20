@@ -1,9 +1,22 @@
 import json
 import threading
 import pika
+import logging
+from datetime import datetime
 from worker import send_to_hikvision, update_employee_kib, assign_privilege_groups
 from config import (RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD, 
                     QUEUE_CREATE_PERSON, QUEUE_UPDATE_KIB, QUEUE_ASSIGN_PRIVILEGE)
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('worker_pubsub.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 def create_connection():
     """Create RabbitMQ connection with proper settings"""
@@ -16,6 +29,33 @@ def create_connection():
         blocked_connection_timeout=300
     )
     return pika.BlockingConnection(connection_params)
+
+def check_rabbitmq_connection():
+    """Check if RabbitMQ connection is working"""
+    try:
+        print(f"Checking RabbitMQ connection...")
+        print(f"  Host: {RABBITMQ_HOST}")
+        print(f"  Port: {RABBITMQ_PORT}")
+        print(f"  User: {RABBITMQ_USER}")
+        
+        connection = create_connection()
+        channel = connection.channel()
+        
+        # Test basic operation
+        channel.queue_declare(queue='connection_test', passive=False)
+        
+        connection.close()
+        
+        print("✓ RabbitMQ connection successful!")
+        return True
+        
+    except pika.exceptions.AMQPConnectionError as e:
+        print(f"✗ RabbitMQ connection failed: {e}")
+        print(f"  Make sure RabbitMQ is running and credentials are correct")
+        return False
+    except Exception as e:
+        print(f"✗ Unexpected error: {e}")
+        return False
 
 def publish_to_queue(queue_name, message):
     """Publish message to specific queue"""
@@ -35,9 +75,13 @@ def publish_to_queue(queue_name, message):
 # Worker 1: Create Person
 def callback_create_person(ch, method, properties, body):
     try:
+        # Log raw message received
+        logger.info(f"[CREATE PERSON] Received message: {body.decode('utf-8')}")
+        
         message = json.loads(body)
         employee = message.get("employee")
         
+        logger.info(f"[CREATE PERSON] Processing: {employee.get('name')} - Data: {json.dumps(employee, indent=2)}")
         print(f"\n[CREATE PERSON] Processing: {employee.get('name')}")
         result = send_to_hikvision(employee)
         
@@ -55,19 +99,25 @@ def callback_create_person(ch, method, properties, body):
                 print(f"[CREATE PERSON] ✓ Sent to UPDATE KIB queue: Person {person_id}")
             
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(f"[CREATE PERSON] ✓ Message processed successfully")
         
     except Exception as e:
+        logger.error(f"[CREATE PERSON] Error: {e}", exc_info=True)
         print(f"[CREATE PERSON] Error: {e}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 # Worker 2: Update KIB
 def callback_update_kib(ch, method, properties, body):
     try:
+        # Log raw message received
+        logger.info(f"[UPDATE KIB] Received message: {body.decode('utf-8')}")
+        
         message = json.loads(body)
         person_id = message.get("personId")
         kib_number = message.get("kib_number")
         employee = message.get("employee")
         
+        logger.info(f"[UPDATE KIB] Processing: Person {person_id}, KIB: {kib_number}")
         print(f"\n[UPDATE KIB] Processing: Person {person_id}")
         success = update_employee_kib(person_id, kib_number)
         
@@ -98,25 +148,33 @@ def callback_update_kib(ch, method, properties, body):
                 print(f"[UPDATE KIB] ✓ Sent to ASSIGN PRIVILEGE queue: {len(privilege_groups)} groups")
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(f"[UPDATE KIB] ✓ Message processed successfully")
         
     except Exception as e:
+        logger.error(f"[UPDATE KIB] Error: {e}", exc_info=True)
         print(f"[UPDATE KIB] Error: {e}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 # Worker 3: Assign Privilege Groups
 def callback_assign_privilege(ch, method, properties, body):
     try:
+        # Log raw message received
+        logger.info(f"[ASSIGN PRIVILEGE] Received message: {body.decode('utf-8')}")
+        
         message = json.loads(body)
         person_id = message.get("personId")
         privilege_groups = message.get("privilege_groups")
         
+        logger.info(f"[ASSIGN PRIVILEGE] Processing: Person {person_id}, Groups: {privilege_groups}")
         print(f"\n[ASSIGN PRIVILEGE] Processing: Person {person_id}")
         assign_privilege_groups(person_id, privilege_groups)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        logger.info(f"[ASSIGN PRIVILEGE] ✓ Completed for person {person_id}")
         print(f"[ASSIGN PRIVILEGE] ✓ Completed for person {person_id}")
         
     except Exception as e:
+        logger.error(f"[ASSIGN PRIVILEGE] Error: {e}", exc_info=True)
         print(f"[ASSIGN PRIVILEGE] Error: {e}")
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
@@ -134,6 +192,19 @@ def start_worker(queue_name, callback, worker_name):
 
 def start_all_workers():
     """Start all 3 workers in separate threads"""
+    # Check RabbitMQ connection first
+    logger.info("="*60)
+    logger.info("Starting Worker Pub/Sub System...")
+    logger.info("="*60)
+    
+    if not check_rabbitmq_connection():
+        logger.error("ERROR: Cannot connect to RabbitMQ!")
+        print("\n" + "="*60)
+        print("ERROR: Cannot connect to RabbitMQ!")
+        print("Please check your .env configuration and ensure RabbitMQ is running")
+        print("="*60 + "\n")
+        return
+    
     workers = [
         (QUEUE_CREATE_PERSON, callback_create_person, "CREATE PERSON"),
         (QUEUE_UPDATE_KIB, callback_update_kib, "UPDATE KIB"),

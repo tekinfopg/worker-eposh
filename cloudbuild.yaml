@@ -1,0 +1,45 @@
+# Google Cloud Build configuration for deploying worker to Cloud Run
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/hikvision-worker:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/hikvision-worker:latest'
+      - '-f'
+      - 'Dockerfile.worker'
+      - '.'
+
+  # Push the Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/hikvision-worker:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/hikvision-worker:latest'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'hikvision-worker'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/hikvision-worker:$COMMIT_SHA'
+      - '--region'
+      - 'asia-southeast2'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'RABBITMQ_HOST=mq.petrokimia-gresik.com,RABBITMQ_PORT=5672,RABBITMQ_USER=user,RABBITMQ_PASSWORD=password'
+
+images:
+  - 'gcr.io/$PROJECT_ID/hikvision-worker:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/hikvision-worker:latest'
